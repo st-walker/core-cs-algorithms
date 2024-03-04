@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+# build-backend = "setuptools.build_meta"
+
+[project]
+name = "calgo"
+version = "0.1.0"
+description = "A sample Python project named calgo"
+authors = [{ name = "Stuart Walker", email = "stuart.derek.walker@gmail.com" }]
+license = { file = "MIT" }
+dependencies = [
+    # List your project dependencies here
+    # e.g., "requests>=2.24.0",
+]
