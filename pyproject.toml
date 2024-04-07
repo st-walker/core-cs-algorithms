@@ -12,3 +12,6 @@ dependencies = [
     # List your project dependencies here
     # e.g., "requests>=2.24.0",
 ]
+
+[project.scripts]
+calgo = "calgo.cli:main"
