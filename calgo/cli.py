@@ -1,3 +1,4 @@
+import sys
 import cProfile
 import atexit
 import pstats
@@ -6,7 +7,10 @@ import io
 from click import option, group, argument, echo, Path, option
 
 from calgo import quicksort
-from calgo.graph import load_undirected_graph, find_min_cut
+from calgo.graph import (load_undirected_graph_mincut_problem,
+                         find_min_cut,
+                         load_scc_problem_file,
+                         find_sccs, dijkstra)
 
 
 @group()
@@ -33,7 +37,7 @@ def main(profile):
 
         atexit.register(exit)
 
-    
+
 
 
 @main.command()
@@ -56,3 +60,21 @@ def qscount(fname, policy):
 def mincut(fname, attempts):
     graph = load_undirected_graph(fname)
     print(find_min_cut(graph, attempts=attempts))
+
+
+@main.command()
+@argument("fname", nargs=1)
+def scc(fname):
+    # Cheating a bit but life is short and I don't want to rewrite
+    # algorithm to use deque+iteration instead of just recursion.
+    sys.setrecursionlimit(500000)
+    graph = load_scc_problem_file(fname)
+    sccs = find_sccs(graph)
+    lens = reversed(sorted([len(s) for s in sccs]))
+    print(lens[:5])
+
+
+@main.command()
+@argument("fname", nargs=1)
+def dijkstra(fname) -> None:
+    pass

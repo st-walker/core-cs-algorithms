@@ -8,6 +8,10 @@ from collections import Counter
 import logging
 import tempfile
 from math import inf
+from collections import deque, defaultdict
+from dataclasses import dataclass
+
+import numpy as np
 
 
 logging.basicConfig()
@@ -18,7 +22,7 @@ LOG.setLevel(logging.INFO)
 class UnknownVertex(RuntimeError):
     pass
 
-                
+
 class GraphError(RuntimeError):
     pass
 
@@ -62,13 +66,13 @@ class DirectedGraph:
     def nvertices(self) -> int:
         return len(self._vertices)
 
-    def vertices(self):
+    def vertices(self) -> list[int]:
         return list(self._vertices.keys())
 
     @property
     def nedges(self) -> int:
         return sum ([counter.total() for counter in self._vertices.values()])
-    
+
     def remove_self_loops(self) -> None:
         for u, adjacency_list in self._vertices.items():
             del adjacency_list[u]
@@ -112,7 +116,7 @@ class DirectedGraph:
 
     def is_directed(self) -> bool:
         return True
-    
+
 
 class UndirectedGraph(DirectedGraph):
     """Class invariant: For each edge (u, v) there is an edge (v, u)"""
@@ -163,30 +167,10 @@ class UndirectedGraph(DirectedGraph):
         return Counter({key: count for key, count in counter.items()})
 
 
-    
 GraphType = DirectedGraph | UndirectedGraph
 GraphClass = type[GraphType]
 
-def _load_graph(fname: os.PathLike, cls: GraphClass) -> GraphType:
-    with open(fname, "r") as f:
-        lines = f.readlines()
-    graph = cls()
-
-    rows = [list(map(int, line.split())) for line in lines]
-    for row in rows:
-        graph.add_vertex(row[0])
-
-    for row in rows:
-        vertex_index, *adjacent_indices = row
-        for adj in adjacent_indices:
-            graph.add_edge(vertex_index, adj)
-
-    return graph
-
-def load_directed_graph(fname: os.PathLike) -> DirectedGraph:
-    return _load_graph(fname, DirectedGraph)
-
-def load_undirected_graph(fname: os.PathLike) -> UndirectedGraph:
+def load_undirected_graph_mincut_problem(fname: os.PathLike) -> UndirectedGraph:
     with open(fname, "r") as f:
         lines = f.readlines()
 
@@ -209,10 +193,19 @@ def load_undirected_graph(fname: os.PathLike) -> UndirectedGraph:
             graph.add_edge(vertex_index, adj)
             seen.add((vertex_index, adj))
 
-
     return graph
 
-    return _load_graph(fname, UndirectedGraph)
+def load_scc_problem_file(fname: os.PathLike) -> DirectedGraph:
+    edges = np.loadtxt(fname, dtype=int)
+    unique_vertices = np.unique(edges)
+    assert np.unique(np.diff(unique_vertices)).item() == 1
+
+    g = DirectedGraph(nvertices=len(unique_vertices))
+    for u, v in edges:
+        g.add_edge(u - 1, v - 1)
+
+    return g
+
 
 def pick_random_edge(graph: Graph) -> tuple[int, int]:
     edges = graph.edges()
@@ -221,11 +214,11 @@ def pick_random_edge(graph: Graph) -> tuple[int, int]:
 def contract_edge(graph: UndirectedGraph, u: int, v: int, self_loops=True):
     # Given an edge (u, v) contract, the edge by removing v and
     # merging all edges of v into u.
-    
+
     # pop the vertex v from the graph, giving us all the vertices
     # adjacent to v, effectively now we have all the (v,w) edges.
     v_adjacents = graph.pop_vertex(v)
-    
+
     # Edges (v, w), which will be attached to u instead, becoming edges (u, w).
     for w, wcount in v_adjacents.items():
         if not self_loops and u == w:
@@ -247,7 +240,7 @@ def find_min_cut(graph: UndirectedGraph, attempts: int = 100) -> int:
         min_cut = min(min_cut, mc)
     return min_cut
 
-def _min_cut_attempt(graph) -> int:
+def _min_cut_attempt(graph: UndirectedGraph) -> int:
     g = deepcopy(graph)
     if g.nvertices <= 2:
         raise GraphError("Graph has an insufficient number of vertices to find a meaningful minimum cut.")
@@ -259,6 +252,178 @@ def _min_cut_attempt(graph) -> int:
 
     # The edges that are left over define a cut, hopefully minimum.
     return g.nedges
+
+
+def bfs(graph: DirectedGraph | UndirectedGraph, u: int) -> list[int]:
+    adj_initial = graph[u]
+    # Read them in backwards so the ordering is nicer at the end...  Not necessary of course.
+    queue = deque((v for v in reversed(adj_initial) if v!= u))
+
+    # This is slower (a list) but I want testability in this codebase.  So order matters.
+    seen = [u]
+    while queue:
+        v = queue.pop()
+        if v in seen:
+            continue
+        v_adj = list(graph[v])
+        queue.extendleft(v_adj)
+        seen.append(v)
+
+    return seen
+
+
+def dfs(graph: DirectedGraph | UndirectedGraph, u: int) -> list[int]:
+    adj_initial = graph[u]
+    queue = deque((v for v in adj_initial if v!= u))
+
+    # This is slower (a list) but I want testability in this codebase.  So order matters.
+    seen = [u]
+    while queue:
+        v = queue.popleft()
+        if v in seen:
+            continue
+        v_adj = list(graph[v])
+        queue.extendleft(v_adj)
+        seen.append(v)
+
+    return seen
+
+def shortest_path(graph: DirectedGraph | UndirectedGraph, u: int) -> dict[int, int]:
+    adj_initial = graph[u]
+    queue = deque(((u, v) for v in adj_initial if v!= u))
+    # Set all distances to initially be zero, except for the starting point, which is by definition 0.
+    distance = {v: inf for v in graph.vertices()}
+    distance[u] = 0
+
+    seen = {u}
+    while queue:
+        u, v = queue.pop()
+        if v in seen:
+            continue
+        v_adj = list(graph[v])
+        queue.extendleft((v, w) for w in v_adj)
+        seen.add(v)
+        distance[v] = distance[u] + 1
+
+    return distance
+
+def connected_components(graph: UndirectedGraph) -> set[frozenset[int]]:
+    ccomponents = set()
+    seen = set()
+    for u in graph.vertices():
+        u_components = frozenset(bfs(graph, u))
+        seen |= u_components
+        ccomponents.add(u_components)
+
+    return ccomponents
+
+
+def topo_sort(graph: DirectedGraph) -> list[int]:
+    seen = set()
+    rank = graph.nvertices
+    # List of tuples, first entry is "rank", second is the vertex index
+    ordering = []
+
+    def _dfs_topo(graph: DirectedGraph, u: int):
+        nonlocal rank # So we can do assigments to rank below.
+        seen.add(u)
+
+        for v in graph[u]:
+            if v in seen:
+                continue
+            _dfs_topo(graph, v)
+
+        ordering.append((rank, u))
+        # ordering[u] = rank
+        rank -= 1
+
+    for u in graph.vertices():
+        if u not in seen:
+            _dfs_topo(graph, u)
+
+    # Finally we sorted (recall sorting a list of tuples sorts by
+    # first element) to get final ordering with respect to assigned
+    # rank.  Yes this is nlogn and is therefore worse than the n+m
+    # algorithm we are aiming for but I am not interested in
+    # implementing a better search for now.
+    ordering = sorted(ordering)
+    # Pick second element (the vertex name):
+    return [u for (_, u) in ordering]
+
+
+def find_sccs(graph: DirectedGraph) -> set[frozenset[int]]:
+    finishing_times = _scc_finishing_times(graph)
+
+    # The vertex which we do the initial dfs whereby other nodes of
+    # the SCC are discovered.
+    current_leader = None
+    seen = set()
+    sccs = defaultdict(list)
+
+    def _dfs(g: DirectedGraph, u: int):
+        nonlocal current_leader
+        sccs[current_leader]
+        seen.add(u) # Mark u as now explored
+        for v in g[u]:
+            if v in seen:
+                continue
+            _dfs(g, v)
+            sccs[current_leader].append(v)
+
+    for timed_vertex in reversed(finishing_times):
+        vertex = timed_vertex.vertex
+        if vertex in seen:
+            continue
+        current_leader = vertex
+        _dfs(graph, vertex)
+
+    return set([frozenset([k, *v]) for k, v in sccs.items()])
+    # return {frozenset({3, 4, 5}), frozenset({6, 7, 8}), frozenset({0, 1, 2})}
+
+@dataclass
+class FinishingTime:
+    vertex: int
+    time: int
+
+
+def _scc_finishing_times(graph: DirectedGraph) -> list[FinishingTime]:
+    grev = reverse_graph(graph)
+    seen = set()
+    finishing_times = [] # List of FinishingTime instances
+    time = 0
+
+    def _dfs(g: DirectedGraph, u: int):
+        nonlocal time
+        nonlocal finishing_times
+
+        seen.add(u) # Mark u as now explored
+        for v in g[u]:
+            if v in seen:
+                continue
+            _dfs(g, v)
+
+        finishing_times.append(FinishingTime(time=time, vertex=u))
+        time += 1
+
+    for u in grev.vertices():
+        if u in seen:
+            continue
+        _dfs(grev, u)
+
+    # Sort by time just in case...
+    return finishing_times
+    return sorted(finishing_times, key=lambda x: x.time)
+
+
+def reverse_graph(graph: DirectedGraph) -> DirectedGraph:
+    result = DirectedGraph(nvertices=graph.nvertices)
+    for u, v in graph.edges():
+        result.add_edge(v, u)
+    return result
+
+
+def dijkstra(graph):
+    pass
 
 
 def display_graph(graph: DirectedGraph | UndirectedGraph, prog="neato") -> None:
