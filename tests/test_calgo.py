@@ -39,8 +39,9 @@ def test_karatsuba_multiply():
 def test_merge_sort(unsorted_list):
     assert merge_sort(unsorted_list) == SORTED_TEST_LIST
 
-# def test_bubble_sort():
-#     assert bubble_sort(unsorted_list) == SORTED_TEST_LIST
+def test_bubble_sort(unsorted_list):
+    bubble_sort(unsorted_list)
+    assert unsorted_list == SORTED_TEST_LIST
 
 def test_quicksort(unsorted_list):
     quicksort(unsorted_list)

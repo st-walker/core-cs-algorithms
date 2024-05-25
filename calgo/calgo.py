@@ -157,8 +157,21 @@ def inversion_count[T](iterable: Iterable[T]) -> int:
 def closest_pair(iterable):
     pass
 
-def bubble_sort(iterable):
-    pass
+def bubble_sort(sequence: list[int | float]) -> None:
+    """Bubble sort IN-PLACE"""
+    n = len(sequence)
+    swapped = False
+    for i, inext in zip(range(n), range(1, n)):
+        xi = sequence[i]
+        xnext = sequence[inext]
+
+        if xi > xnext:
+            swapped = True
+            _swap(sequence, i, inext)
+
+    # If we did a swap then we go again, otherwise we are done.
+    if swapped:
+        bubble_sort(sequence)
 
 
 def _choose_pivot(sequence, l, r, policy):
@@ -172,7 +185,7 @@ def _choose_pivot(sequence, l, r, policy):
         n = (r + 1) - l
         lval = sequence[l]
         rval = sequence[r]
-        
+
         m = n // 2
         if n % 2 == 0:
             m -= 1
@@ -230,7 +243,7 @@ def _quicksort_impl(sequence: list, left: int, right: int, policy="random") -> i
     # already know it's exactly in the right place, so add 1.
     m2 = _quicksort_impl(sequence, sorted_pivot_index + 1, right, policy=policy)
     return m + m1 + m2
-    
+
 def _partition(sequence: list, l: int, r: int) -> int:
     """Input: a sequence with the left and right endpoints demarcating
     a subsequence to be partioned.  The element at sequence[l] is used
