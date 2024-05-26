@@ -10,7 +10,7 @@ from calgo import quicksort
 from calgo.graph import (load_undirected_graph_mincut_problem,
                          find_min_cut,
                          load_scc_problem_file,
-                         find_sccs, dijkstra)
+                         find_sccs, dijkstras, load_graph_for_dijkstras)
 
 
 @group()
@@ -76,5 +76,8 @@ def scc(fname):
 
 @main.command()
 @argument("fname", nargs=1)
-def dijkstra(fname) -> None:
-    pass
+def minpath(fname) -> None:
+    g = load_graph_for_dijkstras(fname)
+    distances = dijkstras(g, start_node=1)
+    vertices_of_interest = [7,37,59,82,99,115,133,165,188,197]
+    print(",".join([str(distances[v]) for v in vertices_of_interest]))

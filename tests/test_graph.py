@@ -16,7 +16,9 @@ from calgo.graph import (UndirectedGraph,
                          shortest_path,
                          topo_sort,
                          reverse_graph,
-                         find_sccs)
+                         find_sccs,
+                         UndirectedWeightedGraph,
+                         dijkstras)
 
 @pytest.fixture
 def undirected_tri_graph():
@@ -296,8 +298,6 @@ def test_find_sccs_other_example(scc_test_graph):
                     frozenset({0, 1, 2})}
 
 
-
-
 def test_reverse_graph():
     g = DirectedGraph(nvertices=4)
 
@@ -313,3 +313,68 @@ def test_reverse_graph():
     assert grev[1][0] == 1
     assert grev[2][1] == 1
     assert grev[3][1] == 1
+
+
+def test_dijkstras():
+    # Graph to be tested is a diamond like this:
+    #
+    #       1
+    #      /|\
+    #    1/ | \6
+    #    /  |  \
+    #   /   |   \
+    #  0    |2   3
+    #   \   |   /
+    #   4\  |  /3
+    #     \ | /
+    #      \|/
+    #       2
+    #
+    #       4
+
+
+    g = UndirectedWeightedGraph(nvertices=4)
+    g.add_edge(0, 1, w=1)
+    g.add_edge(1, 2, w=2)
+    g.add_edge(0, 2, w=4)
+    g.add_edge(1, 3, w=6)
+    g.add_edge(2, 3, w=3)
+    g.add_vertex(4)
+
+
+    distances = dijkstras(g, 0)
+    # by inspection of the graph above we can see that
+    # (0 -> 0) = 0
+    # (0 -> 1) = 1
+    # (0 -> 2) = 3
+    # (0 -> 3) = 6
+    # (0 -> 4) = inf
+    # from IPython import embed; embed()
+    assert distances == {0: 0,
+                         1: 1,
+                         2: 3,
+                         3: 6,
+                         4: inf}
+
+def test_dijkstras_2():
+
+    #   A-(5)->B-(5)-> C
+    #   
+    #  A->C  with weight 6
+
+    # This is a good test example as if we
+    # Greedily just always pick the next smallest weight,
+    # We will end up with a path from A to C through B with distance 10.
+    # Whereas if we just take the direct path with weight 6, we get the true
+    # shortest path from A to C.
+
+    g = UndirectedWeightedGraph(nvertices=3)
+    g.add_edge(0, 1, w=5)
+    g.add_edge(1, 2, w=5)
+    g.add_edge(0, 2, w=6)
+
+    d = dijkstras(g, 0)
+
+    assert d == {0: 0,
+                 1: 5,
+                 2: 6}

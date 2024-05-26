@@ -1,18 +1,17 @@
 from __future__ import annotations
 
+import heapq
+import logging
 import os
 import random
-from copy import deepcopy
-from typing import Iterable, Iterator, TypeVar
-from collections import Counter
-import logging
 import tempfile
-from math import inf
-from collections import deque, defaultdict
+from collections import Counter, defaultdict, deque
+from copy import deepcopy
 from dataclasses import dataclass
+from math import inf
+from typing import Iterable, Iterator, TypeVar
 
 import numpy as np
-
 
 logging.basicConfig()
 LOG = logging.getLogger(__name__)
@@ -170,6 +169,92 @@ class UndirectedGraph(DirectedGraph):
 GraphType = DirectedGraph | UndirectedGraph
 GraphClass = type[GraphType]
 
+
+class DirectedWeightedGraph:
+    """Basic directed weighted graph for the sake of calculating Dijkstra's shortes path"""
+    def __init__(self, nvertices: int = 0):
+        # Deliberately don't use defaultdict so __getitem__ doesn't create new vertices
+        self._vertices = {}
+        for ivertex in range(nvertices):
+            # Initialize empty adjacency list for each vertex
+            self._vertices[ivertex] = []
+
+    def add_edge(self, u: int, v: int, w: int = 1) -> None:
+        # Ask for permission instead of forgivess in this case because
+        # Counter always returns for keys which don't exist (in in
+        # which case it is 0).  But we are using our Counter indices
+        # as to keep track of vertices as well.  But we want to handle
+        # the case where one of the vertices doesn't exist, for added
+        # robustness.  The user must explicitly add a vertex either at
+        # init or with add_vertex.
+        if u not in self._vertices:
+            raise UnknownVertex(f"Vertex {u} does not exist in the graph")
+        if v not in self._vertices:
+            raise UnknownVertex(f"Vertex {v} does not exist in the graph")
+        self._vertices[u].append((v, w))
+
+    def add_vertex(self, v: int) -> None:
+        if v in self._vertices:
+            raise ValueError(f"Vertex {v} already exists")
+        self._vertices[v] = []
+
+    @property
+    def nvertices(self) -> int:
+        return len(self._vertices)
+
+    def vertices(self) -> list[int]:
+        return list(self._vertices.keys())
+
+    def remove_edge(self, u: int, v: int) -> None:
+        if u not in self._vertices:
+            raise UnknownVertex(f"Vertex {u} does not exist in the graph")
+        if v not in self._vertices:
+            raise UnknownVertex(f"Vertex {v} does not exist in the graph")
+        self._vertices[u][v] -= 1
+
+    def __repr__(self):
+        return f"<Graph: {self._vertices}>"
+
+    def __getitem__(self, key: int | slice) -> list[int] | int:
+        return self._vertices[key].copy() # Return a copy to prevent mutation
+
+    def __contains__(self, key: int | tuple) -> bool:
+        if isinstance(key, tuple):
+            u, v = key
+            try:
+                return self._vertices[u][v] > 0
+            except KeyError:
+                return False
+        return key in self._vertices
+
+    def edges(self) -> Iterator[tuple[int, int]]:
+        for u, adjacency_list in self._vertices.items():
+            for v, count in adjacency_list.items():
+                for _ in range(count):
+                    yield u, v
+
+    def is_directed(self) -> bool:
+        return True
+
+    def is_weighted(self) -> bool:
+        return True
+
+    @classmethod
+    def from_adj_list(cls, adj_list: dict[int, int]):
+        g = cls()
+        g._vertices = adj_list
+        return g
+    
+
+class UndirectedWeightedGraph(DirectedWeightedGraph):
+    def add_edge(self, u: int, v: int, w: int = 1) -> None:
+        super().add_edge(u, v, w=w)
+        super().add_edge(v, u, w=w)
+
+    def is_directed(self) -> bool:
+        return False
+
+
 def load_undirected_graph_mincut_problem(fname: os.PathLike) -> UndirectedGraph:
     with open(fname, "r") as f:
         lines = f.readlines()
@@ -195,7 +280,7 @@ def load_undirected_graph_mincut_problem(fname: os.PathLike) -> UndirectedGraph:
 
     return graph
 
-def load_scc_problem_file(fname: os.PathLike) -> DirectedGraph:
+def load_scc_problem_file(fname: str | os.PathLike) -> DirectedGraph:
     edges = np.loadtxt(fname, dtype=int)
     unique_vertices = np.unique(edges)
     assert np.unique(np.diff(unique_vertices)).item() == 1
@@ -206,6 +291,22 @@ def load_scc_problem_file(fname: os.PathLike) -> DirectedGraph:
 
     return g
 
+
+def load_graph_for_dijkstras(fname: str | os.PathLike) -> UndirectedWeightedGraph:
+    path = os.fspath(fname)
+
+    adj_list = defaultdict(list)
+    with open(path, "r") as f:
+        for line in f:
+            u, *edges = line.split()
+            u = int(u)
+            for vw in edges:
+                v, w = vw.split(",")
+                v = int(v)
+                w = int(w)
+                adj_list[u].append((v, w))
+    g = UndirectedWeightedGraph.from_adj_list(adj_list)
+    return g
 
 def pick_random_edge(graph: Graph) -> tuple[int, int]:
     edges = graph.edges()
@@ -422,13 +523,53 @@ def reverse_graph(graph: DirectedGraph) -> DirectedGraph:
     return result
 
 
-def dijkstra(graph):
-    pass
+def dijkstras(graph: UndirectedWeightedGraph, start_node: int) -> dict[int, float | int]:
+    distances = {start_node: 0}
+
+    # List of dijkstra scores with edges, score first as we sort by
+    # them frontier = the list of crossing edges with their weights if
+    # we were to accept them.
+
+    # Frontier is just a list of edges from visited nodes to unvisited
+    # nodes with dijkstra scores.  
+    frontier = [(w, start_node, v) for (v, w) in graph[start_node]]
+    heapq.heapify(frontier)
+
+    while frontier:
+        next_edge = heapq.heappop(frontier)
+        dscore, u, v = next_edge
+
+        # If we have already computed the minimum distance for this
+        # node then we just go to the next edge.  We don't mind adding
+        # multiple edges to the same vertices, as the heap property
+        # ensures we will always pick the one with the lowest dijkstra
+        # score and subsequently we skip any edges to that node with
+        # the following check:
+        if v in distances:
+            continue
+
+        distances[v] = dscore
+        # Get the already computed distance to the node u and add the
+        # weight to get the minimum distance to w from start_node
+        # Now we add all outgoing edges of v to the frontier heap with
+        # their corresponding dijkstra scores.
+        for t, t_weight in graph[v]:
+            t_dscore = t_weight + dscore
+            # If we haven't already calculated a minimum distance
+            if t not in distances:
+                heapq.heappush(frontier, (t_dscore, v, t))
+
+    # Any undiscovered vertices simply get set to infinite distance.
+    for v in graph.vertices():
+        if v not in distances:
+            distances[v] = inf
+
+    return distances
 
 
 def display_graph(graph: DirectedGraph | UndirectedGraph, prog="neato") -> None:
-    import networkx as nx
     import matplotlib.pyplot as plt
+    import networkx as nx
 
     if graph.is_directed():
         G = nx.MultiDiGraph(graph.edges())
