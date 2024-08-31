@@ -1,6 +1,3 @@
-.. image:: https://github.com/st-walker/core-cs-algorithms/actions/workflows/ci.yaml/badge.svg
-        :target: https://github.com/st-walker/core-cs-algorithms/actions/workflows/ci.yaml
-
 
 # Core Algorithms #
 
